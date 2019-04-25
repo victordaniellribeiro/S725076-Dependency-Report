@@ -1,3 +1,22 @@
 .app {
      /* Add app styles here */
 }
+
+.grid-row-span .x-grid3-row {
+    border-bottom: 0;
+}
+.grid-row-span .x-grid3-col {
+    border-bottom: 1px solid #ededed;
+}
+.grid-row-span .row-span {
+    border-bottom: 1px solid #fff;
+}
+.grid-row-span .row-span-first {
+    position: relative;
+}
+.grid-row-span .row-span-first .x-grid3-cell-inner {
+    position: absolute;
+}
+.grid-row-span .row-span-last {
+    border-bottom: 1px solid #ededed;
+}

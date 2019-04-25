@@ -12,8 +12,10 @@ Ext.define('CustomApp', {
     _iterationId: undefined,
     _iterationName: undefined,
 
-    _searchParameter: undefined,
+    _searchParameter: 'f',
     _storiesFilter: undefined,
+
+    _featureStateExclude: undefined,
 
 
     items:[
@@ -64,7 +66,7 @@ Ext.define('CustomApp', {
 					//this._initDate = Rally.util.DateTime.toIsoString(release.get('ReleaseStartDate'),true);
 					//this._endDate = Rally.util.DateTime.toIsoString(release.get('ReleaseDate'),true);
 					this._releaseId = release.get('ObjectID');
-					this._releaseName = combobox.getRecord().get('Name');  
+					this._releaseName = combobox.getRecord().get('Name');
 				},
 				select: function(combobox, records) {
 					var release = records[0];
@@ -102,6 +104,25 @@ Ext.define('CustomApp', {
 
         });
 
+
+        var excludedStatesComboBox = { 
+        	xtype: 'rallyfieldvaluecombobox',
+	        fieldLabel: 'Exclude Feature States',
+	        model: 'PortfolioItem/Feature',
+	        field: 'State',
+	        scope: this,
+	        listeners: {
+	        	change: function(combo) {
+					console.log('Feature State: ', combo.getRawValue());
+					//console.log('store', this._milestoneComboStore);
+
+					this._featureStateExclude = combo.getValue();
+
+				},
+				scope: this
+	        }
+	    };
+
         var searchButton = Ext.create('Rally.ui.Button', {
         	text: 'Search',
         	margin: '10 10 10 100',
@@ -118,24 +139,28 @@ Ext.define('CustomApp', {
         this.down('#header').add([
 		{
 			xtype: 'panel',
+			id: 'filterPanel',
 			autoWidth: true,
 			layout: 'hbox',
 
 			items: [{
 				xtype: 'panel',
 				title: 'Filter:',
+				id: 'innerFilterPanel',
 				flex: 3,
 				align: 'stretch',
 				autoHeight: true,
 				bodyPadding: 10,
 				items: [{
 		            xtype      : 'radiogroup',
+		            id: 'featureStoriesRadioGroup', 
 		            items: [
 		                {
 		                	xtype	  : 'radiofield',				            
 		                    id        : 'radio1',
 		                    name      : 'parameter',
 		                    boxLabel  : 'Features',
+		                    checked   : true,
 		                    padding: '0 10 0 0',				            
 		                    inputValue: 'f'
 		                }, {
@@ -170,7 +195,8 @@ Ext.define('CustomApp', {
 				        },
 				        scope: this
 				    }
-		        }, {
+		        }, excludedStatesComboBox,
+		        {
 		        	xtype: 'radiogroup',
 		        	id: 'storiesRadioFilter',
 		            fieldLabel : 'Choose',
@@ -226,7 +252,7 @@ Ext.define('CustomApp', {
 
 		Ext.ComponentQuery.query('#storiesRadioFilter')[0].hide();
 
-		releaseComboBox.hide();
+		// releaseComboBox.hide();
     	iterationComboBox.hide();
     },
 
@@ -243,6 +269,8 @@ Ext.define('CustomApp', {
             fetch: ['Name', 
             		'FormattedID',
             		'ScheduleState',
+            		'State',
+            		'Release',
             		'Owner',
             		'Project',
             		'Predecessors',
@@ -290,8 +318,10 @@ Ext.define('CustomApp', {
 	                            success: function(predecessors) {
 	                                console.log('p loaded for:',pInfo);
 
-	                                artifact.get('Predecessors')['data'] = predecessors;
-	                                //console.log('tcs attached: ', tcs);
+	                                if (predecessors[0] !== 'empty') {
+	                                	artifact.get('Predecessors')['data'] = predecessors;
+	                                	//console.log('tcs attached: ', tcs);
+	                                }
 
 	                                pLock.resolve();
 	                            },
@@ -309,13 +339,16 @@ Ext.define('CustomApp', {
 
 
 	                        var sPromise = this._loadSuccessors(artifact);
+	                        console.log('creating call to load successors for', sPromise, sInfo);
 
 	                        Deft.Promise.all(sPromise).then({
 	                            success: function(successors) {
-	                                console.log('s loaded for:',sInfo);
+	                                console.log('s loaded for:', successors,sInfo);
 
-	                                artifact.get('Successors')['data'] = successors;
-	                                //console.log('tcs attached: ', tcs);
+	                                if (successors[0] !== 'empty') {
+	                                	artifact.get('Successors')['data'] = successors;
+	                                	//console.log('tcs attached: ', tcs);
+	                                }
 
 	                                sLock.resolve();
 	                            },
@@ -400,14 +433,26 @@ Ext.define('CustomApp', {
 	        }
 	    }
 
+	    var excludeStateFilter;
+	    if (this._featureStateExclude && this._featureStateExclude !== '-- No Entry --') {
+	    	excludeStateFilter = Ext.create('Rally.data.QueryFilter', {
+				property: 'State',
+				operator: '!=',
+				value: this._featureStateExclude
+	    	});
+	    }
+
 	    var dependencyFilter = Ext.create('Rally.data.QueryFilter', {
 			property: 'Predecessors.ObjectID',
 			operator: '!=',
 			value: 'null'
 		});
 
-	   	var finalFilter = filters.and(dependencyFilter);
+	    if (this._searchParameter === 'f' && excludeStateFilter) {
+			filters = filters.and(excludeStateFilter);
+	    }
 
+	   	var finalFilter = filters.and(dependencyFilter);
 
     	return finalFilter;
     },
@@ -421,24 +466,22 @@ Ext.define('CustomApp', {
     	if (this._searchParameter === 'f') {
 	    	_.each(artifacts, function(artifact) {
 
+	    		//1 - dependent data
+	    		//2 - owner data
 	    		if (artifact.get('Predecessors') && artifact.get('Predecessors').data) {
 	    			_.each(artifact.get('Predecessors').data, function(predecessor) {
 	    				dataFeatures.push({
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
+			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
+			    			State: artifact.get('State').Name,
+			    			Project: artifact.get('Project').Name,
 			    			Type: 'P',
 			    			DependentFeature: predecessor.get('FormattedID') + ' - '  + predecessor.get('Name'),
-			    			Release: predecessor.get('Release') ? predecessor.get('Release').Name : '',
-			    			State: predecessor.get('State') ? predecessor.get('State').Name : ''
+			    			DependentProject: predecessor.get('Project').Name,
+			    			DependentRelease: predecessor.get('Release') ? predecessor.get('Release').Name : '',
+			    			DependentState: predecessor.get('State') ? predecessor.get('State').Name : ''
 			    		});
 	    			}, this);
-	    		} else {
-		    		dataFeatures.push({
-		    			FormattedID: artifact.get('FormattedID') + ' '  + artifact.get('Name'),
-		    			Type: 'P',
-		    			DependentFeature: artifact.get('Predecessors').data,
-		    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
-		    			State: artifact.get('State')
-		    		});
 	    		}
 
 
@@ -446,21 +489,18 @@ Ext.define('CustomApp', {
 	    			_.each(artifact.get('Successors').data, function(successor) {
 	    				dataFeatures.push({
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
+			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
+			    			State: artifact.get('State').Name,
+			    			Project: artifact.get('Project').Name,
 			    			Type: 'S',
 			    			DependentFeature: successor.get('FormattedID') + ' - '  + successor.get('Name'),
-			    			Release: successor.get('Release') ? successor.get('Release').Name : '',
-			    			State: successor.get('State') ? successor.get('State').Name : ''
+			    			DependentProject: successor.get('Project').Name,
+			    			DependentRelease: successor.get('Release') ? successor.get('Release').Name : '',
+			    			DependentState: successor.get('State') ? successor.get('State').Name : ''
 			    		});
 	    			}, this);
-	    		} else {
-		    		dataFeatures.push({
-		    			FormattedID: artifact.get('FormattedID') + ' '  + artifact.get('Name'),
-		    			Type: 'S',
-		    			DependentFeature: artifact.get('Successors').data,
-		    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
-		    			State: artifact.get('State')
-		    		});
 	    		}
+
 			}, this);
     	} else {
     		_.each(artifacts, function(artifact) {
@@ -469,22 +509,18 @@ Ext.define('CustomApp', {
 	    			_.each(artifact.get('Predecessors').data, function(predecessor) {
 	    				dataFeatures.push({
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
+			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
+			    			Iteration: artifact.get('Iteration') ? artifact.get('Iteration').Name : '',
+			    			State: artifact.get('ScheduleState'),
+			    			Project: artifact.get('Project').Name,
 			    			Type: 'P',
 			    			DependentFeature: predecessor.get('FormattedID') + ' - '  + predecessor.get('Name'),
-			    			Release: predecessor.get('Release') ? predecessor.get('Release').Name : '',
-			    			Iteration: predecessor.get('Iteration') ? predecessor.get('Iteration').Name : '',
-			    			State: predecessor.get('ScheduleState') ? predecessor.get('ScheduleState') : ''
+			    			DependentProject: predecessor.get('Project').Name,
+			    			DependentRelease: predecessor.get('Release') ? predecessor.get('Release').Name : '',
+			    			DependentIteration: predecessor.get('Iteration') ? predecessor.get('Iteration').Name : '',
+			    			DependentState: predecessor.get('ScheduleState') ? predecessor.get('ScheduleState') : ''
 			    		});
 	    			}, this);
-	    		} else {
-		    		dataFeatures.push({
-		    			FormattedID: artifact.get('FormattedID') + ' '  + artifact.get('Name'),
-		    			Type: 'P',
-		    			DependentFeature: artifact.get('Predecessors').data,
-		    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
-		    			Iteration: artifact.get('Iteration') ? artifact.get('Iteration').Name : '',
-		    			State: artifact.get('ScheduleState')
-		    		});
 	    		}
 
 
@@ -492,22 +528,18 @@ Ext.define('CustomApp', {
 	    			_.each(artifact.get('Successors').data, function(successor) {
 	    				dataFeatures.push({
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
+			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
+			    			Iteration: artifact.get('Iteration') ? artifact.get('Iteration').Name : '',
+			    			State: artifact.get('ScheduleState'),
+			    			Project: artifact.get('Project').Name,
 			    			Type: 'S',
 			    			DependentFeature: successor.get('FormattedID') + ' - '  + successor.get('Name'),
-			    			Release: successor.get('Release') ? successor.get('Release').Name : '',
-			    			Iteration: successor.get('Iteration') ? successor.get('Iteration').Name : '',
-			    			State: successor.get('ScheduleState') ? successor.get('ScheduleState') : ''
+			    			DependentProject: successor.get('Project').Name,
+			    			DependentRelease: successor.get('Release') ? successor.get('Release').Name : '',
+			    			DependentIteration: successor.get('Iteration') ? successor.get('Iteration').Name : '',
+			    			DependentState: successor.get('ScheduleState') ? successor.get('ScheduleState') : ''
 			    		});
 	    			}, this);
-	    		} else {
-		    		dataFeatures.push({
-		    			FormattedID: artifact.get('FormattedID') + ' '  + artifact.get('Name'),
-		    			Type: 'S',
-		    			DependentFeature: artifact.get('Predecessors').data,
-		    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
-		    			Iteration: artifact.get('Iteration') ? artifact.get('Iteration').Name : '',
-		    			State: artifact.get('ScheduleState')
-		    		});
 	    		}
 			}, this);
     	}
@@ -515,7 +547,7 @@ Ext.define('CustomApp', {
 
 
     	var featureStore = Ext.create('Ext.data.JsonStore', {
-			fields:['FormattedID', 'Type', 'DependentFeature', 'Release', 'Iteration', 'State'],
+			fields:['FormattedID', 'Type', 'Project', 'State', 'Release', 'Iteration', 'DependentFeature', 'DependentProject', 'DependentState', 'DependentIteration', 'DependentRelease'],
             data: dataFeatures
         });
 
@@ -526,6 +558,33 @@ Ext.define('CustomApp', {
                     text: 'Feature #',
                     dataIndex: 'FormattedID',
                     flex: 3
+                 //    renderer: function (value, meta, record, rowIndex, colIndex, store) {
+	                //     var first = !rowIndex || value !== store.getAt(rowIndex - 1).get('FormattedID'),
+	                //         last = rowIndex >= store.getCount() - 1 || value !== store.getAt(rowIndex + 1).get('FormattedID');
+	                //     	meta.css += 'row-span' + (first ? ' row-span-first' : '') +  (last ? ' row-span-last' : '');
+	                //     	if (first) {
+	                //         	var i = rowIndex + 1;
+	                //         	while (i < store.getCount() && value === store.getAt(i).get('FormattedID')) {
+	                //             	i++;
+	                //         	}
+	                //         var rowHeight = 20, padding = 6,
+	                //             height = (rowHeight * (i - rowIndex) - padding) + 'px';
+	                //         meta.attr = 'style="height:' + height + ';line-height:' + height + ';"';
+	                //     }
+	                //     }
+	                //     }
+	                //     return first ? value : '';
+	                // }
+                },
+                {
+                    text: 'Feature State',
+                    dataIndex: 'State',
+                    flex: 1
+                },
+                {
+                    text: 'Feature Project',
+                    dataIndex: 'Project',
+                    flex: 1
                 },
                 {
                     text: 'Dependent P/S',
@@ -538,13 +597,18 @@ Ext.define('CustomApp', {
                     flex: 3,
                 },
                 {
+                    text: 'Dependent Project', 
+                    dataIndex: 'DependentProject',
+                    flex: 1,
+                },
+                {
                     text: 'Dependent Release',
-                    dataIndex: 'Release',
+                    dataIndex: 'DependentRelease',
                     flex: 1,
                 },
                 {
                     text: 'Dependent State',
-                    dataIndex: 'State',
+                    dataIndex: 'DependentState',
                     flex: 1,
                 }
             ];
@@ -554,6 +618,16 @@ Ext.define('CustomApp', {
                     text: 'Story #',
                     dataIndex: 'FormattedID',
                     flex: 3
+                },
+                {
+                    text: 'Story State',
+                    dataIndex: 'State',
+                    flex: 1
+                },
+                {
+                    text: 'Story Project',
+                    dataIndex: 'Project',
+                    flex: 1
                 },
                 {
                     text: 'Dependent P/S',
@@ -566,36 +640,158 @@ Ext.define('CustomApp', {
                     flex: 3,
                 },
                 {
+                    text: 'Dependent Project', 
+                    dataIndex: 'DependentProject',
+                    flex: 1,
+                },
+                {
                     text: 'Dependent Release',
-                    dataIndex: 'Release',
+                    dataIndex: 'DependentRelease',
                     flex: 1,
                 },
                 {
                     text: 'Dependent Iteration',
-                    dataIndex: 'Iteration',
+                    dataIndex: 'DependentIteration',
                     flex: 1,
                 },
                 {
                     text: 'Dependent State',
-                    dataIndex: 'State',
+                    dataIndex: 'DependentState',
                     flex: 1,
                 }
             ];
     	}
 
-        var featuresGrid = Ext.create('Ext.grid.Panel', {
+        var featuresGrid;
+        featuresGrid = Ext.create('Ext.grid.Panel', {
     		//width: 500,
     		itemId : 'featuresGrid',
     		store: featureStore,
+    		//sortableColumns: false,
     		viewConfig : {
-    			enableTextSelection: true
+    			enableTextSelection: true,
+    			listeners: {
+		            viewready: function(view) {
+		            	console.log('viewready, view');
+		                // console.log('ext calling update rowspan', columns);
+		                // console.log('ext calling update rowspan', featuresGrid);
+		                // console.log('ext calling update rowspan', featureStore);
+		                //featureStore.filter('Type', 'P');
+		                this._updateRowSpan(columns, featuresGrid, featureStore);
+
+		            }, 
+		            sortchange: function(store, filters) {
+		            	console.log('sort change, view');
+	            	 	console.log('ext calling update rowspan', columns);
+		                console.log('ext calling update rowspan', featuresGrid);
+		                console.log('ext calling update rowspan', featureStore);
+		                this._updateRowSpan(columns, featuresGrid, featureStore);
+		            },
+		            scope:this
+		        }
     		},
+    		listeners: {
+	            sortchange: function(store, filters) {
+	            	console.log('sort change, grid');
+            	 	console.log('ext calling update rowspan', columns);
+	                console.log('ext calling update rowspan', featuresGrid);
+	                console.log('ext calling update rowspan', featureStore);
+	                this._updateRowSpan(columns, featuresGrid, featureStore);
+	            },
+	            scope:this
+	        },
 
     		columns: columns
         });
+        	
+
+        var predSuccFilter = {
+			xtype: 'panel',
+			id: 'predSuccFilterPanel',
+			flex: 3,
+			align: 'stretch',
+			autoHeight: true,
+			bodyPadding: 10,
+			items: [{
+	            xtype      : 'radiogroup',
+	            id         : 'predSuccFilterRadio',
+	            fieldLabel : 'Choose filter',
+	            columns    : 3,
+	            vertical: true,  
+	            items: [
+	                {
+	                	xtype	  : 'radiofield',				            
+	                    id        : 'radiop',
+	                    name      : 'psaFilter',
+	                    boxLabel  : 'Predecessors',
+	                    padding: '0 10 0 0',				            
+	                    inputValue: 'p'
+	                }, {
+	                    id        : 'radios',
+	                    name      : 'psaFilter',
+	                    boxLabel  : 'Successors',
+	                    padding: '0 10 0 0',			            
+	                    inputValue: 's'
+	                }, {
+	                    id        : 'radioa',
+	                    name      : 'psaFilter',
+	                    boxLabel  : 'All',
+	                    cheked	  : true,
+	                    padding: '0 10 0 0',			            
+	                    inputValue: 'a'
+	                }
+	            ],
+	            listeners: {
+			        change: function(field, newValue, oldValue) {
+			            var value = newValue.psaFilter;
+
+			            console.log('value radio:', value);
+
+			            // var storiesFilter = Ext.ComponentQuery.query('#storiesRadioFilter')[0];
+
+			            if (value === 'p') {
+			            	//filter only Type == p
+			            	featureStore.clearFilter(true);
+			            	featureStore.filter('Type', 'P');
+			            } else if (value === 's') {
+			            	//filter only Type == s
+			            	featureStore.clearFilter(true);
+			            	featureStore.filter('Type', 'S');
+			            } else {
+			            	//clear filter
+			            	featureStore.clearFilter(false);
+			            }
+			            this._updateRowSpan(columns, featuresGrid, featureStore);			            
+			        },
+			        scope: this
+			    }
+	        }]
+		};
+
+
+		var exportButton = Ext.create('Rally.ui.Button', {
+        	text: 'Export',
+        	margin: '10 10 10 10',
+        	scope: this,
+        	handler: function() {
+        		var csv = this._convertToCSV(dataFeatures);
+        		console.log('converting to csv:', csv);
+
+
+        		//Download the file as CSV
+		        var downloadLink = document.createElement("a");
+		        var blob = new Blob(["\ufeff", csv]);
+		        var url = URL.createObjectURL(blob);
+		        downloadLink.href = url;
+		        downloadLink.download = "report.csv";  //Name the file here
+		        document.body.appendChild(downloadLink);
+		        downloadLink.click();
+		        document.body.removeChild(downloadLink);
+        	}
+        });
 
         var mainPanel = Ext.create('Ext.panel.Panel', {			
-			title: 'Features Dependency',
+			title: 'TEAMS WORK ITEMS AND ALIGNED DEPENDENCIES',
 			//autoWidth: true,
 			autoScroll: true,
             layout: {
@@ -605,19 +801,89 @@ Ext.define('CustomApp', {
 			},
             padding: 5,            
             items: [
-                featuresGrid                
+            	predSuccFilter,
+                featuresGrid               
             ]
         });
 
 		this.down('#bodyContainer').add(mainPanel);
+		this.down('#bodyContainer').add(exportButton);
+		// Ext.ComponentQuery.query('#radioa')[0].setValue('a');
+		//this._updateRowSpan(columns, featuresGrid, featureStore);
 
 
     },
+
+	_updateRowSpan: function(columns, grid, store) {
+        var columns = columns,//this.columns,
+            view = grid.getView(),//this.getView(),
+            store = store,//this.getStore(),
+            rowCount = store.getCount(),
+            
+            column = columns[0],
+            dataIndex = column.dataIndex,
+            
+            spanCell = null,
+            spanCell1 = null,
+            spanCell2 = null,
+            spanCount = null,
+            spanValue = null;
+
+        for (var row = 0; row < rowCount; ++row) {
+            var cell = view.getCellByPosition({ row: row, column: 0 }).dom;
+            var cell1 = view.getCellByPosition({ row: row, column: 1 }).dom;
+            var cell2 = view.getCellByPosition({ row: row, column: 2 }).dom;
+
+            var record = store.getAt(row);
+            var value = record.get(dataIndex);
+            
+            if (spanValue !== value) {
+                if (spanCell !== null) {
+                    spanCell.rowSpan = spanCount;
+                    spanCell1.rowSpan = spanCount;
+                    spanCell2.rowSpan = spanCount;
+                }
+                
+                Ext.fly(cell).setStyle('display', '');
+                Ext.fly(cell).setStyle('vertical-align', 'middle');
+                Ext.fly(cell1).setStyle('display', '');
+                Ext.fly(cell1).setStyle('vertical-align', 'middle');
+                Ext.fly(cell2).setStyle('display', '');
+                Ext.fly(cell2).setStyle('vertical-align', 'middle');
+                spanCell = cell;
+                spanCell1 = cell1;
+                spanCell2 = cell2;
+                spanCount = 1;
+                spanValue = value;
+            } else {
+                spanCount++;
+                Ext.fly(cell).setStyle('display', 'none');
+                Ext.fly(cell1).setStyle('display', 'none');
+                Ext.fly(cell2).setStyle('display', 'none');
+            }
+        }
+        
+        if (spanCell !== null) {
+            spanCell.rowSpan = spanCount;
+            spanCell1.rowSpan = spanCount;
+            spanCell2.rowSpan = spanCount;
+        }
+    },
+
 
 
     _loadPredecessors: function(artifact) {
         var deferred = Ext.create('Deft.Deferred');
         //console.log('loading tc for story:', story);
+
+        var filter = [];
+        if (this._searchParameter =='f' && this._featureStateExclude && this._featureStateExclude != '-- No Entry --') {
+        	filter = [{
+                property : 'State',
+                operator : '!=',
+                value : this._featureStateExclude
+            }];
+        }
 
         artifact.getCollection('Predecessors').load({
             fetch: ['Name',
@@ -630,20 +896,35 @@ Ext.define('CustomApp', {
             		'Release',
             		'Iteration'
             	   ],
+            filters : filter,
+            scope: this,
             callback: function(records, operation, success) {
-                //console.log('TestCase loaded:', records);
-                deferred.resolve(records);                
+                console.log('predecessor loaded:', records);
+
+                if (records.length > 0) {
+                	deferred.resolve(records); 
+                } else {
+                	deferred.resolve(['empty']);
+                }              
             }
         });                    
 
         return deferred.promise;
-
     },
 
 
     _loadSuccessors: function(artifact) {
         var deferred = Ext.create('Deft.Deferred');
         //console.log('loading tc for story:', story);
+
+        var filter = [];
+        if (this._searchParameter =='f' && this._featureStateExclude && this._featureStateExclude != '-- No Entry --') {
+        	filter = [{
+                property : 'State',
+                operator : '!=',
+                value : this._featureStateExclude
+            }];
+        }
 
         artifact.getCollection('Successors').load({
             fetch: ['Name',
@@ -656,13 +937,38 @@ Ext.define('CustomApp', {
             		'Release',
             		'Iteration'
             	   ],
+    	    filters : filter,
+            scope: this,
             callback: function(records, operation, success) {
-                //console.log('TestCase loaded:', records);
-                deferred.resolve(records);                
+                console.log('successor loaded:', records);
+
+                if (records.length > 0) {
+                	deferred.resolve(records); 
+                } else {
+                	deferred.resolve(['empty']);
+                }
             }
         });                    
 
         return deferred.promise;
 
+    },
+
+
+    _convertToCSV: function(objArray) {
+		var fields = Object.keys(objArray[0]);
+
+		var replacer = function(key, value) { return value === null ? '' : value; };
+		var csv = objArray.map(function(row){
+		  return fields.map(function(fieldName) {
+		    return JSON.stringify(row[fieldName], replacer);
+		  }).join(',');
+		});
+
+		csv.unshift(fields.join(',')); // add header column
+
+		//console.log(csv.join('\r\n'));
+
+		return csv.join('\r\n');
     }
 });
