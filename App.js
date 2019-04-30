@@ -16,6 +16,7 @@ Ext.define('CustomApp', {
     _storiesFilter: undefined,
 
     _featureStateExclude: undefined,
+    _dependentFeatureStateExclude: undefined,
 
 
     items:[
@@ -108,15 +109,86 @@ Ext.define('CustomApp', {
         var excludedStatesComboBox = { 
         	xtype: 'rallyfieldvaluecombobox',
 	        fieldLabel: 'Exclude Feature States',
+	        id: 'excludedStatesComboBox',
+	        defaultSelectionPosition: 'none',
+	        multiSelect: true,
 	        model: 'PortfolioItem/Feature',
 	        field: 'State',
 	        scope: this,
 	        listeners: {
 	        	change: function(combo) {
-					console.log('Feature State: ', combo.getRawValue());
+					console.log('Feature State: ', combo.lastSelection);
 					//console.log('store', this._milestoneComboStore);
 
-					this._featureStateExclude = combo.getValue();
+					this._featureStateExclude = combo.lastSelection;
+
+				},
+				scope: this
+	        }
+	    };
+
+
+	    var excludedDependentStatesComboBox = { 
+        	xtype: 'rallyfieldvaluecombobox',
+	        fieldLabel: 'Exclude Dependent Feature States',
+	        id: 'excludedDependentStatesComboBox',
+	        multiSelect: true,
+	        defaultSelectionPosition: 'none',
+	        model: 'PortfolioItem/Feature',
+	        field: 'State',
+	        scope: this,
+	        listeners: {
+	        	change: function(combo) {
+					console.log('Dependent Feature State: ', combo.lastSelection);
+					//console.log('store', this._milestoneComboStore);
+
+					this._dependentFeatureStateExclude = combo.lastSelection;
+
+				},
+				scope: this
+	        }
+	    };
+
+
+	    var excludedScheduleStatesComboBox = { 
+        	xtype: 'rallyfieldvaluecombobox',
+	        fieldLabel: 'Exclude Story States',
+	        id: 'excludedScheduleStatesComboBox',
+	        defaultSelectionPosition: 'none',
+	        multiSelect: true,
+	        hidden: true,
+	        model: 'HierarchicalRequirement',
+	        field: 'ScheduleState',
+	        scope: this,
+	        listeners: {
+	        	change: function(combo) {
+					console.log('Story State: ', combo.lastSelection);
+					//console.log('store', this._milestoneComboStore);
+
+					this._featureStateExclude = combo.lastSelection;
+
+				},
+				scope: this
+	        }
+	    };
+
+
+	    var excludedDependentScheduleStatesComboBox = { 
+        	xtype: 'rallyfieldvaluecombobox',
+	        fieldLabel: 'Exclude Dependent Story States',
+	        id: 'excludedDependentScheduleStatesComboBox',
+	        defaultSelectionPosition: 'none',
+	        multiSelect: true,
+	        hidden: true,
+	        model: 'HierarchicalRequirement',
+	        field: 'ScheduleState',
+	        scope: this,
+	        listeners: {
+	        	change: function(combo) {
+					console.log('Dependent Story State: ', combo.lastSelection);
+					//console.log('store', this._milestoneComboStore);
+
+					this._dependentFeatureStateExclude = combo.lastSelection;
 
 				},
 				scope: this
@@ -184,9 +256,23 @@ Ext.define('CustomApp', {
 				            	releaseComboBox.show();
 				            	iterationComboBox.hide();
 				            	storiesFilter.hide();
+				            	Ext.ComponentQuery.query('#excludedStatesComboBox')[0].show();
+				            	Ext.ComponentQuery.query('#excludedDependentStatesComboBox')[0].show();
+				            	Ext.ComponentQuery.query('#excludedScheduleStatesComboBox')[0].hide();
+				            	Ext.ComponentQuery.query('#excludedDependentScheduleStatesComboBox')[0].hide();
+
+				            	Ext.ComponentQuery.query('#excludedScheduleStatesComboBox')[0].setValue();
+								Ext.ComponentQuery.query('#excludedDependentScheduleStatesComboBox')[0].setValue();
 				            } else if (value === 's') {
 				            	storiesFilter.show();
 				            	Ext.ComponentQuery.query('#releaseRadio')[0].setValue('r');
+				            	Ext.ComponentQuery.query('#excludedStatesComboBox')[0].hide();
+				            	Ext.ComponentQuery.query('#excludedDependentStatesComboBox')[0].hide();
+				            	Ext.ComponentQuery.query('#excludedScheduleStatesComboBox')[0].show();
+				            	Ext.ComponentQuery.query('#excludedDependentScheduleStatesComboBox')[0].show();
+
+				            	Ext.ComponentQuery.query('#excludedStatesComboBox')[0].setValue();
+								Ext.ComponentQuery.query('#excludedDependentStatesComboBox')[0].setValue();
 				            } else {
 				            	releaseComboBox.hide();
 				            	iterationComboBox.hide();
@@ -195,7 +281,11 @@ Ext.define('CustomApp', {
 				        },
 				        scope: this
 				    }
-		        }, excludedStatesComboBox,
+		        }, 
+	        		excludedStatesComboBox, 
+	        		excludedDependentStatesComboBox,
+	        		excludedScheduleStatesComboBox, 
+	        		excludedDependentScheduleStatesComboBox,
 		        {
 		        	xtype: 'radiogroup',
 		        	id: 'storiesRadioFilter',
@@ -258,10 +348,13 @@ Ext.define('CustomApp', {
 
 
     _doSearch: function() {
+    	this.down('#bodyContainer').removeAll();
     	this.myMask.show();
     	
     	var types = this._getTypes();
     	var filters = this._getFilters();
+
+    	console.log('filters for search', filters);
 
         var featureStore = Ext.create('Rally.data.wsapi.artifact.Store', {
             models: types,
@@ -270,6 +363,7 @@ Ext.define('CustomApp', {
             		'FormattedID',
             		'ScheduleState',
             		'State',
+            		'PercentDoneByStoryPlanEstimate',
             		'Release',
             		'Owner',
             		'Project',
@@ -400,6 +494,12 @@ Ext.define('CustomApp', {
     _getFilters: function() {
     	var filters;
 
+    	var dependencyFilter = Ext.create('Rally.data.QueryFilter', {
+			property: 'Predecessors.ObjectID',
+			operator: '!=',
+			value: 'null'
+		});
+
     	if (this._searchParameter === 'f') {
         	var releaseFilter = Ext.create('Rally.data.QueryFilter', {
 				property: 'Release.name',
@@ -433,23 +533,25 @@ Ext.define('CustomApp', {
 	        }
 	    }
 
-	    var excludeStateFilter;
-	    if (this._featureStateExclude && this._featureStateExclude !== '-- No Entry --') {
-	    	excludeStateFilter = Ext.create('Rally.data.QueryFilter', {
-				property: 'State',
-				operator: '!=',
-				value: this._featureStateExclude
-	    	});
+	    if (this._searchParameter === 'f' && this._featureStateExclude && this._featureStateExclude.length > 0) {
+	    	console.log('exclude filters:', this._featureStateExclude);
+
+	    	var lfs = this._getExcludadeFeatureStateFilter();
+
+	    	_.each(lfs, function(filter) {
+    			dependencyFilter = dependencyFilter.and(filter);
+	    	}, this);
 	    }
 
-	    var dependencyFilter = Ext.create('Rally.data.QueryFilter', {
-			property: 'Predecessors.ObjectID',
-			operator: '!=',
-			value: 'null'
-		});
 
-	    if (this._searchParameter === 'f' && excludeStateFilter) {
-			filters = filters.and(excludeStateFilter);
+	    if (this._searchParameter === 's' && this._featureStateExclude && this._featureStateExclude.length > 0) {
+	    	console.log('exclude story filters:', this._featureStateExclude);
+
+	    	var lfs = this._getExcludadeStoryScheduleStateFilter();
+
+	    	_.each(lfs, function(filter) {
+    			dependencyFilter = dependencyFilter.and(filter);
+	    	}, this);
 	    }
 
 	   	var finalFilter = filters.and(dependencyFilter);
@@ -460,7 +562,6 @@ Ext.define('CustomApp', {
 
     _createGrid: function(artifacts) {
     	console.log('Creating grid with artifacts', artifacts);
-    	this.down('#bodyContainer').removeAll();
     	var dataFeatures = [];
 
     	if (this._searchParameter === 'f') {
@@ -474,9 +575,11 @@ Ext.define('CustomApp', {
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
 			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
 			    			State: artifact.get('State').Name,
+			    			PercentDoneByStoryPlanEstimate: artifact.get('PercentDoneByStoryPlanEstimate'),
 			    			Project: artifact.get('Project').Name,
 			    			Type: 'P',
 			    			DependentFeature: predecessor.get('FormattedID') + ' - '  + predecessor.get('Name'),
+			    			DependentPercentDoneByStoryPlanEstimate : predecessor.get('PercentDoneByStoryPlanEstimate'),
 			    			DependentProject: predecessor.get('Project').Name,
 			    			DependentRelease: predecessor.get('Release') ? predecessor.get('Release').Name : '',
 			    			DependentState: predecessor.get('State') ? predecessor.get('State').Name : ''
@@ -491,9 +594,11 @@ Ext.define('CustomApp', {
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
 			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
 			    			State: artifact.get('State').Name,
+			    			PercentDoneByStoryPlanEstimate: artifact.get('PercentDoneByStoryPlanEstimate'),
 			    			Project: artifact.get('Project').Name,
 			    			Type: 'S',
 			    			DependentFeature: successor.get('FormattedID') + ' - '  + successor.get('Name'),
+			    			DependentPercentDoneByStoryPlanEstimate: successor.get('PercentDoneByStoryPlanEstimate'),
 			    			DependentProject: successor.get('Project').Name,
 			    			DependentRelease: successor.get('Release') ? successor.get('Release').Name : '',
 			    			DependentState: successor.get('State') ? successor.get('State').Name : ''
@@ -547,7 +652,19 @@ Ext.define('CustomApp', {
 
 
     	var featureStore = Ext.create('Ext.data.JsonStore', {
-			fields:['FormattedID', 'Type', 'Project', 'State', 'Release', 'Iteration', 'DependentFeature', 'DependentProject', 'DependentState', 'DependentIteration', 'DependentRelease'],
+			fields:['FormattedID', 
+					'Type', 
+					'Project', 
+					'State', 
+					'Release', 
+					'Iteration', 
+					'DependentFeature', 
+					'PercentDoneByStoryPlanEstimate',
+					'DependentProject', 
+					'DependentState', 
+					'DependentPercentDoneByStoryPlanEstimate',
+					'DependentIteration', 
+					'DependentRelease'],
             data: dataFeatures
         });
 
@@ -587,6 +704,21 @@ Ext.define('CustomApp', {
                     flex: 1
                 },
                 {
+                	text: 'Percent Done By Story PlanEstimate',
+                	dataIndex: 'PercentDoneByStoryPlanEstimate',
+                	flex: 2,
+                	xtype:'templatecolumn',
+                	tpl: Ext.create('Rally.ui.renderer.template.progressbar.PercentDoneByStoryPlanEstimateTemplate', {
+                    	isClickable: false,
+                    	showDangerNotificationFn : function() {
+                    		return false;
+                    	}
+                    })
+                	// renderer  : function(percent) {
+                 //        return Ext.util.Format.number(percent * 100, '0.##%');
+                 //    }
+                },
+                {
                     text: 'Dependent P/S',
                     dataIndex: 'Type',
                     flex: 1,
@@ -595,6 +727,19 @@ Ext.define('CustomApp', {
                     text: 'Dependent Feature #', 
                     dataIndex: 'DependentFeature',
                     flex: 3,
+                },
+                {
+                	text: 'Dependent Feature Percent Done By Story PlanEstimate',
+                	dataIndex: 'DependentPercentDoneByStoryPlanEstimate',
+                	flex: 2,
+                	xtype:'templatecolumn',
+                	tpl: Ext.create('Rally.ui.renderer.template.progressbar.PercentDoneByStoryPlanEstimateTemplate', {
+                    	isClickable: false,
+                    	percentDoneName: 'DependentPercentDoneByStoryPlanEstimate',
+                    	showDangerNotificationFn : function() {
+                    		return false;
+                    	}
+                    })
                 },
                 {
                     text: 'Dependent Project', 
@@ -799,7 +944,7 @@ Ext.define('CustomApp', {
 				align: 'stretch',
 				//padding: 5
 			},
-            padding: 5,            
+            //padding: 5,            
             items: [
             	predSuccFilter,
                 featuresGrid               
@@ -871,18 +1016,113 @@ Ext.define('CustomApp', {
     },
 
 
+    _getExcludadeFeatureStateFilter: function() {
+    	console.log('exclude filters:', this._featureStateExclude);
+    	var excludedFilter = undefined;
+
+    	var lfs = []
+    	_.each(this._featureStateExclude, function(comboRecord) {
+    		var state = comboRecord.get('name');
+
+    		if (state !== '-- No Entry --') {
+	    		var f = Ext.create('Rally.data.QueryFilter', {
+					property: 'State',
+					operator: '!=',
+					value: state
+		    	});
+
+		    	lfs.push(f);	    			
+    		}
+    	}, this);
+
+    	return lfs;
+    },
+
+
+
+    _getExcludadeStoryScheduleStateFilter: function() {
+    	var excludedFilter = undefined;
+
+    	var lfs = []
+    	_.each(this._featureStateExclude, function(comboRecord) {
+    		var state = comboRecord.get('name');
+
+    		if (state) {
+	    		var f = Ext.create('Rally.data.QueryFilter', {
+					property: 'ScheduleState',
+					operator: '!=',
+					value: state
+		    	});
+
+		    	lfs.push(f);	    			
+    		}
+    	}, this);
+
+    	console.log('exclude story filters:', lfs);
+    	return lfs;
+    },
+
+
+    _getDependentExcludadeFeatureStateFilter: function() {
+    	console.log('exclude dependent filters:', this._dependentFeatureStateExclude);
+    	var excludedFilter = undefined;
+
+    	var lfs = []
+    	_.each(this._dependentFeatureStateExclude, function(comboRecord) {
+    		var state = comboRecord.get('name');
+
+    		if (state !== '-- No Entry --') {
+	    		var f = Ext.create('Rally.data.QueryFilter', {
+					property: 'State',
+					operator: '!=',
+					value: state
+		    	});
+
+		    	lfs.push(f);	    			
+    		}
+    	}, this);
+
+    	console.log('exclude dependent feature filters:', lfs);
+    	return lfs;
+    },
+
+
+    _getDependentExcludadeStoryScheduleStateFilter: function() {
+    	console.log('exclude dependent filters:', this._dependentFeatureStateExclude);
+    	var excludedFilter = undefined;
+
+    	var lfs = []
+    	_.each(this._dependentFeatureStateExclude, function(comboRecord) {
+    		var state = comboRecord.get('name');
+
+    		if (state) {
+	    		var f = Ext.create('Rally.data.QueryFilter', {
+					property: 'ScheduleState',
+					operator: '!=',
+					value: state
+		    	});
+
+		    	lfs.push(f);	    			
+    		}
+    	}, this);
+
+    	console.log('exclude dependent story filters:', lfs);
+    	return lfs;
+    },
+
+
 
     _loadPredecessors: function(artifact) {
         var deferred = Ext.create('Deft.Deferred');
         //console.log('loading tc for story:', story);
 
         var filter = [];
-        if (this._searchParameter =='f' && this._featureStateExclude && this._featureStateExclude != '-- No Entry --') {
-        	filter = [{
-                property : 'State',
-                operator : '!=',
-                value : this._featureStateExclude
-            }];
+        if (this._searchParameter =='f' && this._dependentFeatureStateExclude) {
+        	filter = this._getDependentExcludadeFeatureStateFilter();
+        }
+
+        if (this._searchParameter =='s' && this._dependentFeatureStateExclude) {
+        	filter  = this._getDependentExcludadeStoryScheduleStateFilter();
         }
 
         artifact.getCollection('Predecessors').load({
@@ -892,6 +1132,7 @@ Ext.define('CustomApp', {
             		'State',
             		'Project',
             		'PlanEstimate',
+            		'PercentDoneByStoryPlanEstimate',
             		'LeafStoryPlanEstimateTotal',
             		'Release',
             		'Iteration'
@@ -918,12 +1159,12 @@ Ext.define('CustomApp', {
         //console.log('loading tc for story:', story);
 
         var filter = [];
-        if (this._searchParameter =='f' && this._featureStateExclude && this._featureStateExclude != '-- No Entry --') {
-        	filter = [{
-                property : 'State',
-                operator : '!=',
-                value : this._featureStateExclude
-            }];
+        if (this._searchParameter =='f' && this._dependentFeatureStateExclude) {
+        	filter = this._getDependentExcludadeFeatureStateFilter();
+        }
+
+        if (this._searchParameter =='s' && this._dependentFeatureStateExclude) {
+        	filter  = this._getDependentExcludadeStoryScheduleStateFilter();
         }
 
         artifact.getCollection('Successors').load({
@@ -934,6 +1175,7 @@ Ext.define('CustomApp', {
             		'Project',
             		'PlanEstimate',
             		'LeafStoryPlanEstimateTotal',
+            		'PercentDoneByStoryPlanEstimate',
             		'Release',
             		'Iteration'
             	   ],
