@@ -494,11 +494,19 @@ Ext.define('CustomApp', {
     _getFilters: function() {
     	var filters;
 
-    	var dependencyFilter = Ext.create('Rally.data.QueryFilter', {
+    	var predFilter = Ext.create('Rally.data.QueryFilter', {
 			property: 'Predecessors.ObjectID',
 			operator: '!=',
 			value: 'null'
 		});
+
+		var succFilter = Ext.create('Rally.data.QueryFilter', {
+			property: 'Successors.ObjectID',
+			operator: '!=',
+			value: 'null'
+		});
+
+    	var dependencyFilter = predFilter.or(succFilter);
 
     	if (this._searchParameter === 'f') {
         	var releaseFilter = Ext.create('Rally.data.QueryFilter', {
@@ -1020,7 +1028,7 @@ Ext.define('CustomApp', {
     	console.log('exclude filters:', this._featureStateExclude);
     	var excludedFilter = undefined;
 
-    	var lfs = []
+    	var lfs = [];
     	_.each(this._featureStateExclude, function(comboRecord) {
     		var state = comboRecord.get('name');
 
@@ -1043,7 +1051,7 @@ Ext.define('CustomApp', {
     _getExcludadeStoryScheduleStateFilter: function() {
     	var excludedFilter = undefined;
 
-    	var lfs = []
+    	var lfs = [];
     	_.each(this._featureStateExclude, function(comboRecord) {
     		var state = comboRecord.get('name');
 
@@ -1067,7 +1075,7 @@ Ext.define('CustomApp', {
     	console.log('exclude dependent filters:', this._dependentFeatureStateExclude);
     	var excludedFilter = undefined;
 
-    	var lfs = []
+    	var lfs = [];
     	_.each(this._dependentFeatureStateExclude, function(comboRecord) {
     		var state = comboRecord.get('name');
 
@@ -1091,7 +1099,7 @@ Ext.define('CustomApp', {
     	console.log('exclude dependent filters:', this._dependentFeatureStateExclude);
     	var excludedFilter = undefined;
 
-    	var lfs = []
+    	var lfs = [];
     	_.each(this._dependentFeatureStateExclude, function(comboRecord) {
     		var state = comboRecord.get('name');
 
