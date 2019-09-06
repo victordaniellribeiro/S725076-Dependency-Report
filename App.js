@@ -582,7 +582,7 @@ Ext.define('CustomApp', {
 	    				dataFeatures.push({
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
 			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
-			    			State: artifact.get('State').Name,
+			    			State: artifact.get('State') ? artifact.get('State').Name : '',
 			    			PercentDoneByStoryPlanEstimate: artifact.get('PercentDoneByStoryPlanEstimate'),
 			    			Project: artifact.get('Project').Name,
 			    			Type: 'P',
@@ -601,7 +601,7 @@ Ext.define('CustomApp', {
 	    				dataFeatures.push({
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
 			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
-			    			State: artifact.get('State').Name,
+			    			State: artifact.get('State') ? artifact.get('State').Name : '',
 			    			PercentDoneByStoryPlanEstimate: artifact.get('PercentDoneByStoryPlanEstimate'),
 			    			Project: artifact.get('Project').Name,
 			    			Type: 'S',
