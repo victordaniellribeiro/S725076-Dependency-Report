@@ -18,6 +18,9 @@ Ext.define('CustomApp', {
     _featureStateExclude: undefined,
     _dependentFeatureStateExclude: undefined,
 
+    _milestoneType: undefined,
+    _selectedMilestones: undefined,
+
 
     items:[
         {
@@ -104,6 +107,58 @@ Ext.define('CustomApp', {
             }
 
         });
+
+
+        this._milestoneComboStore = undefined;
+		this._milestoneCombo = Ext.widget('rallymilestonecombobox', {
+			itemId: 'milestonecombobox',
+			allowClear: true,
+			multiSelect: false,
+			queryMode: 'local',
+			width: 300,
+			listeners: {
+				afterrender: function(combobox) {
+					combobox.disable();
+				},
+				beforerender: function(combo) {
+					console.log('beforerender: ', combo);
+					this._blockFilters();
+
+					//console.log('store', this._milestoneComboStore);
+					//this._setFilter(combo.value);
+				},
+				ready: function(combo) {
+					console.log('ready: ', combo.value);
+					this._unBlockFilters();
+					combo.refreshStore();
+					combo.enable();
+					//console.log('store', this._milestoneComboStore);
+					//this._setFilter(combo.value);
+				},
+				change: function(combo) {
+					//console.log('change: ', combo);
+					console.log('milestone change: ', combo.getValue());
+					//console.log('store', this._milestoneComboStore);
+
+					if (combo.getValue() && combo.getValue() != '' && combo.valueModels.length > 0) {
+						var milestones = combo.valueModels;
+						milestones.sort(
+							function(a, b) {
+								return a.get('TargetDate').getTime() - b.get('TargetDate').getTime();
+							}
+						);
+
+						this._selectedMilestones = milestones;
+					} else {
+						this._selectedMilestones = [];
+						this._applyMilestoneRangeFilter(this._initDate, this._endDate, this._milestoneComboStore, this);
+					}
+				},
+				scope: this
+			}
+		});
+
+		this._milestoneComboStore = this._milestoneCombo.getStore();
 
 
         var excludedStatesComboBox = { 
@@ -329,13 +384,80 @@ Ext.define('CustomApp', {
 				        scope: this
 				    }
 		        }]
-			}]
+			}, {
+					xtype: 'panel',
+					title: 'Milestone Filter:',
+					//width: 450,
+					//layout: 'fit',
+					flex: 3,
+					align: 'stretch',
+					autoHeight: true,
+					bodyPadding: 10,
+					items: [{
+						xtype: 'datefield',
+						anchor: '100%',
+				        fieldLabel: 'From',
+						scope: this,
+			        	listeners : {
+			        		change: function(picker, newDate, oldDate) {
+			        			this._initDate = newDate;
+			        			var that = this;
+
+			        			//console.log('Store:', this._milestoneComboStore);
+			        			this._applyMilestoneRangeFilter(this._initDate, this._endDate, this._milestoneComboStore, that);
+			        		},
+			        		scope:this
+			        	}
+					}, {
+						xtype: 'datefield',
+						anchor: '100%',
+				        fieldLabel: 'To',
+						scope: this,
+			        	listeners : {
+			        		change: function(picker, newDate, oldDate) {
+			        			this._endDate = newDate;
+			        			var that = this;
+
+			        			//console.log('Store:', this._milestoneComboStore);
+			        			this._applyMilestoneRangeFilter(this._initDate, this._endDate, this._milestoneComboStore, that);
+			        		},
+			        		scope:this
+			        	}
+					}, {					
+				        xtype: 'rallyfieldvaluecombobox',
+				        fieldLabel: 'Milestone Types',
+				        model: 'Milestone',
+				        field: 'c_Type',
+				        scope: this,
+				        listeners: {
+				        	change: function(combo) {
+								console.log('Milestone type: ', combo.getValue());
+								//console.log('store', this._milestoneComboStore);
+
+								this._milestoneType = combo.getValue();
+
+								this._applyMilestoneRangeFilter(this._initDate, this._endDate, this._milestoneComboStore, this, this._milestoneType);
+							},
+							scope: this
+				        }
+					}]
+				}]
 		},
 		{
 			xtype: 'panel',
 			items: [
 				releaseComboBox,
 				iterationComboBox,
+				
+				{
+					xtype: 'fieldcontainer',
+					fieldLabel: 'Milestone',
+					pack: 'end',
+					labelAlign: 'right',
+					items: [
+						this._milestoneCombo
+					]
+				},
 				searchButton
 			]
 		}]);
@@ -345,6 +467,85 @@ Ext.define('CustomApp', {
 		// releaseComboBox.hide();
     	iterationComboBox.hide();
     },
+
+
+    _applyMilestoneRangeFilter: function(initDate, endDate, store, scope, milestoneType) {
+		//console.log(initDate, endDate, store, scope);
+		if (initDate && !endDate && !milestoneType) {
+			this._milestoneComboStore.filterBy(function(record) {
+				if (record.get('TargetDate')) {
+					if (record.get('TargetDate').getTime() > initDate.getTime()) {
+						return record;
+					}
+				}
+			}, scope);
+
+		} else if (endDate && !initDate && !milestoneType) {
+			this._milestoneComboStore.filterBy(function(record) {
+				if (record.get('TargetDate')) {
+					if (record.get('TargetDate').getTime() < endDate.getTime()) {
+						return record;
+					}
+				}
+			}, scope);
+		} else if (initDate && endDate && !milestoneType) {
+			this._milestoneComboStore.filterBy(function(record) {
+				if (record.get('TargetDate')) {
+					if ((record.get('TargetDate').getTime() > initDate.getTime()) && 
+						(record.get('TargetDate').getTime() < endDate.getTime())) {
+						return record;
+					}
+				}
+			}, scope);
+		} else if (initDate && !endDate && milestoneType) {
+			this._milestoneComboStore.filterBy(function(record) {
+				if (record.get('TargetDate')) {
+					if (record.get('TargetDate').getTime() > initDate.getTime() &&
+						(record.get('c_Type') === this._milestoneType)) {
+						return record;
+					}
+				}
+			}, scope);
+		} else if (!initDate && endDate && milestoneType) {
+			this._milestoneComboStore.filterBy(function(record) {
+				if (record.get('TargetDate')) {
+					if (record.get('TargetDate').getTime() < initDate.getTime() &&
+						(record.get('c_Type') === this._milestoneType)) {
+						return record;
+					}
+				}
+			}, scope);
+		} else if (!initDate && !endDate && milestoneType) {
+			this._milestoneComboStore.filterBy(function(record) {
+				if (record.get('c_Type') && (record.get('c_Type') === this._milestoneType) ) {
+					return record;
+				}
+			}, scope);
+		} else if (endDate && initDate && milestoneType) {
+			this._milestoneComboStore.filterBy(function(record) {
+				if (record.get('TargetDate')) {
+					if (record.get('TargetDate').getTime() < endDate.getTime() &&
+						(record.get('TargetDate').getTime() > initDate.getTime()) &&
+						(record.get('c_Type') === this._milestoneType)) {
+						return record;
+					}
+				}
+			}, scope);
+		} else {
+			this._milestoneComboStore.filterBy(function(record) {				
+				return record;
+			});
+		}
+	},
+
+	_blockFilters: function() {
+		this.down('#header').disable();
+	},
+
+
+	_unBlockFilters: function() {
+		this.down('#header').enable();
+	},
 
 
     _doSearch: function() {
@@ -564,7 +765,42 @@ Ext.define('CustomApp', {
 
 	   	var finalFilter = filters.and(dependencyFilter);
 
+	   	var milestoneFilter = this._getMilestoneFilter();
+
+	   	if (milestoneFilter) {
+	   		finalFilter = finalFilter.and(milestoneFilter);
+	   	}
+
     	return finalFilter;
+    },
+
+
+    _getMilestoneFilter: function() {
+    	var milestoneFilter = null;
+
+
+    	if (this._selectedMilestones && this._selectedMilestones.length > 0) {
+	    	_.each(this._selectedMilestones, function(milestone) {
+	    		var milestoneTag = milestone.get('_ref');
+
+	    		var newMilestoneFilter = Ext.create('Rally.data.QueryFilter', {
+					property: 'Milestones',
+					operator: 'contains',
+					value: milestoneTag
+				});
+
+	    		if (milestoneFilter) {
+	    			milestoneFilter = milestoneFilter.or(newMilestoneFilter);
+	    		} else {
+	    			milestoneFilter = newMilestoneFilter;
+	    		}
+
+	    	}, this);
+    	}
+
+
+		console.log('filter', milestoneFilter);
+		return milestoneFilter;
     },
 
 
@@ -573,6 +809,7 @@ Ext.define('CustomApp', {
     	var dataFeatures = [];
 
     	if (this._searchParameter === 'f') {
+    		var countId = 0;
 	    	_.each(artifacts, function(artifact) {
 
 	    		//1 - dependent data
@@ -580,6 +817,7 @@ Ext.define('CustomApp', {
 	    		if (artifact.get('Predecessors') && artifact.get('Predecessors').data) {
 	    			_.each(artifact.get('Predecessors').data, function(predecessor) {
 	    				dataFeatures.push({
+	    					CountID: countId,
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
 			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
 			    			State: artifact.get('State') ? artifact.get('State').Name : '',
@@ -590,7 +828,8 @@ Ext.define('CustomApp', {
 			    			DependentPercentDoneByStoryPlanEstimate : predecessor.get('PercentDoneByStoryPlanEstimate'),
 			    			DependentProject: predecessor.get('Project').Name,
 			    			DependentRelease: predecessor.get('Release') ? predecessor.get('Release').Name : '',
-			    			DependentState: predecessor.get('State') ? predecessor.get('State').Name : ''
+			    			DependentState: predecessor.get('State') ? predecessor.get('State').Name : '',
+			    			DependentPlannedEndDate: predecessor.get('PlannedEndDate')
 			    		});
 	    			}, this);
 	    		}
@@ -599,6 +838,7 @@ Ext.define('CustomApp', {
 	    		if (artifact.get('Successors') && artifact.get('Successors').data) {
 	    			_.each(artifact.get('Successors').data, function(successor) {
 	    				dataFeatures.push({
+	    					CountID: countId,
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
 			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
 			    			State: artifact.get('State') ? artifact.get('State').Name : '',
@@ -609,18 +849,23 @@ Ext.define('CustomApp', {
 			    			DependentPercentDoneByStoryPlanEstimate: successor.get('PercentDoneByStoryPlanEstimate'),
 			    			DependentProject: successor.get('Project').Name,
 			    			DependentRelease: successor.get('Release') ? successor.get('Release').Name : '',
-			    			DependentState: successor.get('State') ? successor.get('State').Name : ''
+			    			DependentState: successor.get('State') ? successor.get('State').Name : '',
+			    			DependentPlannedEndDate: successor.get('PlannedEndDate')
 			    		});
 	    			}, this);
 	    		}
 
+	    		countId++;
+
 			}, this);
     	} else {
+			var countId = 0;
     		_.each(artifacts, function(artifact) {
 
 	    		if (artifact.get('Predecessors') && artifact.get('Predecessors').data) {
 	    			_.each(artifact.get('Predecessors').data, function(predecessor) {
 	    				dataFeatures.push({
+	    					CountID: countId,
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
 			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
 			    			Iteration: artifact.get('Iteration') ? artifact.get('Iteration').Name : '',
@@ -640,6 +885,7 @@ Ext.define('CustomApp', {
 	    		if (artifact.get('Successors') && artifact.get('Successors').data) {
 	    			_.each(artifact.get('Successors').data, function(successor) {
 	    				dataFeatures.push({
+	    					CountID: countId,
 			    			FormattedID: artifact.get('FormattedID') + ' - '  + artifact.get('Name'),
 			    			Release: artifact.get('Release') ? artifact.get('Release').Name : '',
 			    			Iteration: artifact.get('Iteration') ? artifact.get('Iteration').Name : '',
@@ -654,13 +900,16 @@ Ext.define('CustomApp', {
 			    		});
 	    			}, this);
 	    		}
+
+	    		countId++;
 			}, this);
     	}
 
 
 
     	var featureStore = Ext.create('Ext.data.JsonStore', {
-			fields:['FormattedID', 
+			fields:['CountID',
+					'FormattedID', 
 					'Type', 
 					'Project', 
 					'State', 
@@ -672,13 +921,19 @@ Ext.define('CustomApp', {
 					'DependentState', 
 					'DependentPercentDoneByStoryPlanEstimate',
 					'DependentIteration', 
-					'DependentRelease'],
+					'DependentRelease',
+					'DependentPlannedEndDate'],
             data: dataFeatures
         });
 
     	var columns;
     	if (this._searchParameter === 'f') {
     		columns = [
+    			{
+                    text: 'Count ID',
+                    dataIndex: 'CountID',
+                    flex: 1
+                },
                 {
                     text: 'Feature #',
                     dataIndex: 'FormattedID',
@@ -729,12 +984,12 @@ Ext.define('CustomApp', {
                 {
                     text: 'Dependent P/S',
                     dataIndex: 'Type',
-                    flex: 1,
+                    flex: 1
                 },
                 {
                     text: 'Dependent Feature #', 
                     dataIndex: 'DependentFeature',
-                    flex: 3,
+                    flex: 3
                 },
                 {
                 	text: 'Dependent Feature Percent Done By Story PlanEstimate',
@@ -752,21 +1007,33 @@ Ext.define('CustomApp', {
                 {
                     text: 'Dependent Project', 
                     dataIndex: 'DependentProject',
-                    flex: 1,
+                    flex: 1
                 },
                 {
                     text: 'Dependent Release',
                     dataIndex: 'DependentRelease',
-                    flex: 1,
+                    flex: 1
                 },
                 {
                     text: 'Dependent State',
                     dataIndex: 'DependentState',
-                    flex: 1,
+                    flex: 1
+                },
+                {
+                    text: 'Dependent PlannedEndDate',
+                    dataIndex: 'DependentPlannedEndDate',
+                    xtype: 'datecolumn',
+                    format   : 'm/d/Y',
+                    flex: 1
                 }
             ];
     	} else {
     		columns = [
+    			{
+                    text: 'Count ID',
+                    dataIndex: 'CountID',
+                    flex: 1
+                },
                 {
                     text: 'Story #',
                     dataIndex: 'FormattedID',
@@ -973,7 +1240,7 @@ Ext.define('CustomApp', {
             store = store,//this.getStore(),
             rowCount = store.getCount(),
             
-            column = columns[0],
+            column = columns[1],
             dataIndex = column.dataIndex,
             
             spanCell = null,
@@ -1143,7 +1410,8 @@ Ext.define('CustomApp', {
             		'PercentDoneByStoryPlanEstimate',
             		'LeafStoryPlanEstimateTotal',
             		'Release',
-            		'Iteration'
+            		'Iteration',
+            		'PlannedEndDate'
             	   ],
             filters : filter,
             scope: this,
@@ -1185,7 +1453,8 @@ Ext.define('CustomApp', {
             		'LeafStoryPlanEstimateTotal',
             		'PercentDoneByStoryPlanEstimate',
             		'Release',
-            		'Iteration'
+            		'Iteration',
+            		'PlannedEndDate'
             	   ],
     	    filters : filter,
             scope: this,
